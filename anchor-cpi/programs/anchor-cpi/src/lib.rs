@@ -1,56 +1,94 @@
 use anchor_lang::prelude::*;
+use borsh::{BorshSerialize, BorshDeserialize};
 
-declare_id!("C6SrAByDmBm4u5dcZLYJErYirVn4o6tf6329SpFoVbW7");
+// Native program's instruction enum
+#[derive(BorshSerialize, BorshDeserialize)]
+pub enum CounterInstruction {
+    Initialize,
+    Double,
+    Half,
+}
+
+declare_id!("3vpQib3CfZgzDZkZjjJcfW6ikMee8kp8jLDYNP9Kj83w"); // Replace with your CPI wrapper program ID
 
 #[program]
-pub mod cpi_contract {
+pub mod cpi_wrapper {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {          
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        let ix_data = CounterInstruction::Initialize.try_to_vec()
+            .map_err(|_| anchor_lang::error::ErrorCode::AccountDidNotDeserialize)?;
+
         let accounts = vec![
             AccountMeta::new(*ctx.accounts.data_account.key, false),
             AccountMeta::new(*ctx.accounts.user_account.key, true),
             AccountMeta::new_readonly(anchor_lang::system_program::ID, false),
         ];
 
-        //construct 
-        let instruction = anchor_lang::solana_program::instruction::Instruction {
-            program_id: ctx.accounts.cpi_program.key(),
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.native_program.key(),
             accounts,
-            data: vec![0],
+            data: ix_data,
         };
 
-        // CPI to the native counter program
         anchor_lang::solana_program::program::invoke(
-            &instruction,
+            &ix,
             &[
-                // to account info gives the metadata of the key
-                ctx.accounts.cpi_program.to_account_info(),
+                ctx.accounts.data_account.to_account_info(),
                 ctx.accounts.user_account.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.native_program.to_account_info(),
             ],
         )?;
 
         Ok(())
     }
 
-    pub fn double(ctx: Context<Initialize>) -> Result<()> {
-        
+    pub fn double(ctx: Context<Modify>) -> Result<()> {
+        let ix_data = CounterInstruction::Double.try_to_vec()
+            .map_err(|_| anchor_lang::error::ErrorCode::AccountDidNotDeserialize)?;
+
         let accounts = vec![
             AccountMeta::new(*ctx.accounts.data_account.key, true),
         ];
 
-        let instruction = anchor_lang::solana_program::instruction::Instruction {
-            program_id: ctx.accounts.cpi_program.key(),
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.native_program.key(),
             accounts,
-            data: vec![1],
+            data: ix_data,
         };
 
-        // CPI to the native counter program
-        // CPI to the native counter program
         anchor_lang::solana_program::program::invoke(
-            &instruction,
-            &[ctx.accounts.data_account.to_account_info()],
+            &ix,
+            &[
+                ctx.accounts.data_account.to_account_info(),
+                ctx.accounts.native_program.to_account_info(),
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn half(ctx: Context<Modify>) -> Result<()> {
+        let ix_data = CounterInstruction::Half.try_to_vec()
+            .map_err(|_| anchor_lang::error::ErrorCode::AccountDidNotDeserialize)?;
+
+        let accounts = vec![
+            AccountMeta::new(*ctx.accounts.data_account.key, true),
+        ];
+
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.native_program.key(),
+            accounts,
+            data: ix_data,
+        };
+
+        anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                ctx.accounts.data_account.to_account_info(),
+                ctx.accounts.native_program.to_account_info(),
+            ],
         )?;
 
         Ok(())
@@ -59,16 +97,26 @@ pub mod cpi_contract {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    /// CHECK: This is safe because it’s only passed to the CPI call and not accessed directly.
+    /// CHECK: Safe because only passed to CPI
     #[account(mut)]
     pub data_account: AccountInfo<'info>,
 
-    /// CHECK: This must be a signer and mutable as it will pay for the transaction.
+    /// CHECK: Payer for account creation
     #[account(mut, signer)]
     pub user_account: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
 
-    /// CHECK: This is the external CPI program being invoked. We don’t access its data.
-    pub cpi_program: AccountInfo<'info>,
+    /// CHECK: Native program account
+    pub native_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Modify<'info> {
+    /// CHECK: Safe because only passed to CPI
+    #[account(mut)]
+    pub data_account: AccountInfo<'info>,
+
+    /// CHECK: Native program account
+    pub native_program: AccountInfo<'info>,
 }
